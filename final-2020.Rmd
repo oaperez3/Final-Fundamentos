@@ -5,6 +5,104 @@ output:
   pdf_document: default
 ---
 
+
+2.3 Supongamos que ahora buscamos hacer inferencia del parámetro 
+$\tau=log(\sigma)$, ¿cuál es el estimador de máxima verosimilitud?
+
+El estimador de maxima verosimilitud de $\sigma=(\frac{\Sigma(x_i-\hat \mu )^2}{n})^\frac{1}{2}$ y por invarianza $\tau=\frac{1}{2}log((\frac{\Sigma(x_i-\hat \mu )^2}{n})^\frac{1}{2})$
+
+* Utiliza bootstrap paramétrico para generar un intervalo de confianza del 95%
+para el parámetro $\tau$ y realiza un histograma de las replicaciones 
+bootstrap.
+
+```{r}
+set.seed(3000)
+crear_log_p <- function(x){
+  log_p <- function(desv_est){
+    z <- (x) / desv_est
+    log_verosim <- -(log(desv_est) +  0.5 * mean(z^2))
+    log_verosim
+  }  
+  log_p
+}
+log_p <- crear_log_p(x)
+
+res <- optim(c(2), log_p, control = list(fnscale = -1, maxit = 1000), method = "Nelder-Mead")
+
+est_mle <- tibble(parametro = c("sigma"), estimador = res$par) %>% 
+  column_to_rownames(var = "parametro")
+
+
+simular_modelo <- function(n, sigma){
+  rnorm(n, 0,sigma)
+}
+muestra_bootstrap <- simular_modelo(length(x), 
+                                    est_mle["sigma", "estimador"])
+head(muestra_bootstrap)
+
+
+rep_boot <- function(rep, crear_log_p, est_mle, n){
+  muestra_bootstrap <- simular_modelo(length(x),
+                               est_mle["sigma", "estimador"])
+  log_p_boot <- crear_log_p(muestra_bootstrap)
+  # optimizamos
+  res_boot <- optim(c( 2), log_p_boot, 
+    control = list(fnscale = -1, maxit = 1000), method = "Nelder-Mead")
+  try(if(res_boot$convergence != 0) stop("No se alcanzó convergencia."))
+  tibble(parametro = c("sigma"), estimador_boot = res_boot$par) 
+}
+reps_boot <- map_dfr(1:5000, ~ rep_boot(.x, crear_log_p, est_mle, 
+                                        n = length(x)), rep = ".id") 
+
+reps_boot<-reps_boot %>% mutate(tau=log(estimador_boot))
+
+ggplot(reps_boot, aes(sample = tau)) + 
+  geom_qq() + geom_qq_line(colour = "red")+ xlab("tau")
+
+ggplot(reps_boot, aes(sample = estimador_boot),xlab(sigma)) + 
+  geom_qq() + geom_qq_line(colour = "red")+xlab("sigma")
+
+ggplot(reps_boot, aes(x = estimador_boot)) +
+  geom_histogram()+xlab("sigma")
+
+x_minfrec<-quantile(tau_bayes,c(0.025))
+x_maxfrec<-quantile(reps_boot$tau,c(0.975))
+  
+ggplot(reps_boot, aes(x = tau)) +
+  geom_histogram()+xlab("tau_bootstrap")+geom_vline(aes(xintercept=x_minfrec,colour="red"))+geom_vline(aes(xintercept=x_maxfrec,colour="red"))
+
+intervalo_frec<-quantile(reps_boot$tau,c(0.025,0.975))
+intervalo_frec
+
+
+```
+
+
+
+* Ahora volvamos a inferencia bayesiana, calcula  un intervalo de confianza para $\tau$ y un histograma de la distribución posterior de $\tau$.
+
+Por el metodo de momentos obtuvimos los valores $\alpha=76.9725$ y $\beta=9928.099$ para la inicial de la gamma, ajustamos los valores de la posterior de una gamma inversa con media conocida con base en la siguiente pagina mencionada en clase https://en.wikipedia.org/wiki/Conjugate_prior ($\alpha_1=\alpha_0+\frac{n}{2}$,$\beta_1=\beta_0+(\frac{\Sigma(x_i- \mu )^2}{2})$) de tal forma $p(\sigma|x)\sim GammaInversa(\alpha_1,\beta_1)$
+
+
+
+```{r}
+set.seed(3000)
+alfa<-76.9725 +length(x)/2
+beta<-9928.099+ sum((x-mean(x))^2)/2
+sigma_bayes<-1/(rgamma(5000,alfa,beta))
+tau_bayes<-log(sqrt(sigma_bayes))
+x_minbayes<-quantile(tau_bayes,c(0.025))
+x_maxbayes<-quantile(tau_bayes,c(0.975))
+ggplot(tibble(tau_bayes), aes(x = tau_bayes)) +
+  geom_histogram()+xlab("tau_bayes")+geom_vline(aes(xintercept=x_minbayes,colour="red"))+geom_vline(aes(xintercept=x_maxbayes,colour="red"))
+
+intervalo_bayes<-quantile(tau_bayes,c(0.025,0.975))
+intervalo_bayes
+
+```
+
+
+
 ## 3. Bayesiana y regularización
 
 Lee el ejempo *2.7 Informative prior distribution for cancer rates* del libro
