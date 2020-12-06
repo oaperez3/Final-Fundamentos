@@ -1,0 +1,166 @@
+---
+title: "Final Fundamentos 2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## 3. Bayesiana y regularización
+
+Lee el ejempo *2.7 Informative prior distribution for cancer rates* del libro
+[Bayesian Data Analysis](http://www.stat.columbia.edu/~gelman/book/BDA3.pdf) (página 46).
+
+En el siguiente ejercicio harás algo similar al ejemplo anterior, en este caso 
+con el modelo Beta-Binomial.
+
+Los datos *pew_research_center_june_elect_wknd_data.dta* tienen información de 
+encuestas realizadas durante la campaña presidencial 2008 de EUA.
+
+```{r}
+library(tidyverse)
+library(arm)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(foreign)
+library(usdata)
+poll_data <- foreign::read.dta("data/pew_research_center_june_elect_wknd_data.dta")
+poll_data$ideo = as.character(poll_data$ideo)
+poll_data[is.na(poll_data$ideo),]$ideo = 0
+poll_data[poll_data$ideo=="very conservative",]$ideo = 2
+poll_data[poll_data$ideo=="conservative",]$ideo = 1
+poll_data[poll_data$ideo=="moderate",]$ideo = 0
+poll_data[poll_data$ideo=="dk/refused",]$ideo = 0
+poll_data[poll_data$ideo=="liberal",]$ideo = -1
+poll_data[poll_data$ideo=="very liberal",]$ideo = -2
+
+poll_data<- poll_data %>% filter(state != 'hawaii' & state != 'washington dc')
+poll_data <- poll_data%>%mutate(very_liberal = poll_data$ideo == -2)
+table(poll_data$ideo == -2)
+```
+
+* Estima el porcentaje de la población de cada estado (excluyendo Alaska, Hawai, 
+y DC)  que se considera *very liberal*, utilizando el estimador de máxima 
+verosimilitud.
+
+```{r}
+# Hacemos la limpieza de los datos 
+# Una vez hecha la limpieza generamos un nuevo DF en el cual seleccionamos por estado a los votantes "very_liberal"
+# Secalcula el porcentaje de Very_Liberal por estado
+df_vl <- poll_data %>%group_by(state)  %>% summarise(very_liberal_pct = sum(very_liberal)/n(), samplesize = n(), very_liberal = sum(very_liberal))# %>% select(state, very_liberal_pct, samplesize)
+
+
+df_vl$state <- df_vl$state%>%as.character()
+
+#df_vl[df_vl$state == "washington dc",]$state = "district of columbia"
+
+#alas <- data.frame(state = c("alaska"), very_liberal_pct = c(0), samplesize = c(0))
+#df_vl <- rbind(df_vl,alas)
+
+df_vl<- df_vl %>% filter(state != 'hawaii' & state != 'washington dc')
+
+df_vl$state = state2abbr(toupper(df_vl$state))
+
+p <- ggplot(df_vl, aes(y=very_liberal_pct,  x=samplesize))
+p <- p + geom_text(aes(label=state)) +
+  labs(title="", 
+       x = "Encuestas por estado", 
+       y = "Porcentaje de votantes 'Very liberal'")
+p
+
+#df_vl_cho <- df_vl[,c(1,2)]
+#names(df_vl_cho) = c("region","value")
+#state_choropleth(df_vl_cho, title = "Proporcion de gente 'Very Liberal'")
+####
+election08 = read_csv("http://www.stat.columbia.edu/~gelman/surveys.course/2008ElectionResult.csv")
+
+obama_pct_st <- election08 %>% dplyr::select(state, vote_Obama_pct)
+
+obama_pct_st$state <- obama_pct_st$state%>%tolower
+obama_pct_st$state = state2abbr(toupper(obama_pct_st$state))
+obama_pct_st<- obama_pct_st %>% filter(state != 'hawaii' & state != 'district of columbia' & state != 'alaska')
+
+df_vl <- df_vl %>% inner_join(obama_pct_st)
+
+q <- ggplot(df_vl, aes(y=very_liberal_pct,  x=vote_Obama_pct))
+q + geom_text(aes(label=state)) +
+  labs(title="", 
+       x = "Porcentaje votos Obama", 
+       y = "Porcentaje encuesta 'Very liberal'")
+```
+  - Grafica en el eje *x* el número de encuestas para cada estado y en el eje *y* 
+  la estimación de máxima verosimilitud. ¿Qué observas?  
+  
+#### Se Observa que demasiada incertidumbe en los estados que hicieron muy pocas encuestas, por lo tanto no deberiamos de considerarlos.
+
+  - Grafica en el eje *x* el porcentaje de votos que obtuvo Obama en la elección
+  para cada estado y en el eje *y* la estimación de máxima verosimilitud. ¿Qué observas? (usa los datos *2008ElectionResult.csv*)
+
+* Estima el mismo porcentaje usando inferencia bayesiana, en particular
+la familia conjugada binomial-beta. Deberás estimar la proporción de manera 
+independiente para cada estado, sin embargo, utilizarás la misma inicial a lo
+largo de todos.
+  - Para elegir los parámetros $\alpha$, $\beta$ de la incial considera la media
+  y varianza de la distribución predictiva posterior (que en este caso tiene
+  distribución [Beta-Binomial](https://en.wikipedia.org/wiki/Beta-binomial_distribution))
+  y empata la media y varianza observadas a sus valores observados para después
+  depejar $\alpha$ y $\beta$ (puedes usar [Wolfram alpha](https://www.wolframalpha.com/) para resolver).  
+  - Utiliza la media posterior de cada estado como estimador puntual y repite las
+  gráficas del inciso anterior.
+  
+  
+## Sol
+De la distribucion *Beta-Binomial* 
+
+```{r}
+
+m_1 = mean(df_vl$very_liberal_pct)
+m_2 = var(df_vl$very_liberal_pct)
+sqrt(m_2)
+
+#Calculados por medio de WolframAlpha
+alpha_m = 7.7752
+beta_m = 161.656
+
+E_x = alpha_m/(beta_m+alpha_m)
+#- Utiliza la media posterior de cada estado como estimador puntual y repite las
+# gráficas del inciso anterior
+
+df_vl <- df_vl%>%mutate(tibble(cc = seq(0,0.12,length= 48),y_1 = dbeta(cc,alpha_m,beta_m)))
+
+g <- ggplot(df_vl, aes(x=very_liberal_pct))+ geom_histogram(aes(very_liberal_pct), colour = "black", fill="brown", bins = 12, fill) + geom_line(aes(x=cc, y=y_1), colour="gray") +theme_classic()
+g
+
+
+```
+
+```{r}
+m_beta <- function(alfa,beta){
+  m_b = alfa/(alfa+beta)
+  return(m_b)
+}
+alpha00 = 
+beta00 = 
+df_vl <- df_vl%>%mutate(post_m = m_beta(alpha_m + df_vl$very_liberal,
+            beta_m + df_vl$samplesize - df_vl$very_liberal))
+
+f <- ggplot(df_vl, aes(y=post_m,  x=vote_Obama_pct))
+f + geom_text(aes(label=state)) +
+  labs(title="", 
+       x = "Porcentaje votos Obama", 
+       y = "Posterior 'Very liberal'")
+
+df_vl <- df_vl%>%mutate(post_m = m_beta(alpha_m + df_vl$very_liberal,
+            beta_m + df_vl$samplesize - df_vl$very_liberal))
+
+r <- ggplot(df_vl, aes(y=post_m,  x=samplesize))
+r + geom_text(aes(label=state)) +
+  labs(title="", 
+       x = "Encuestas por Estado", 
+       y = "Posterior 'Very liberal'")
+
+```
+
+**Nota:** Este proceso para obtener los parámetros de la incial es razonable para
+este ejercicio, sin embargo, un modelo jerárquico sería la manera de formalizar 
+este acercamiento y se estudiará en próximas materias.
