@@ -1,0 +1,601 @@
+---
+title: "Proyecto_Final"
+author: "Oscar Pérez 37398, ____________, ______________"
+date: "2/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+if (!require(tidyverse)) {
+    install.packages("tidyverse")
+    require(tidyverse)
+}
+
+if (!require(invgamma)) {
+    install.packages("invgamma")
+    require(invgamma)
+}
+
+library(tidyverse)
+
+```
+
+
+## 1. Pruebas de hipótesis
+
+De acuerdo a una encuesta en EUA, 26% de los residentes adultos de Illinois han terminado la preparatoria. Un investigador sospecha que este porcentaje es menor en un condado particular del estado. Obtiene una muestra aleatoria de dicho condado y encuentra que 69 de 310 personas en la muestra han completado la preparatoria. Estos resultados soportan su hipótesis? (describe tu elección de prueba de hipótesis, valor p y conclusión).
+
+
+Hipótesis Nula: La proporción de los residentes de Illinois que han terminado la preparatoria (26%) que han terminado la preparatoria es igual que en un condado en particular.
+
+Usaremos la prueba de Wald.
+
+Primero calculamos un estimador de la probabilidad del condado y un estimador del error estándar
+
+```{r}
+p_hat <- 69 / 310
+ee <- sqrt(p_hat * (1 - p_hat) / 310)
+```
+
+Calculamos la estadística W de Wald
+
+```{r}
+w <- (p_hat - .26) / ee
+w
+```
+
+Calculamos el valor p a una cola porque queremos ver si es menor
+
+```{r}
+valor_p <-  (1 - pnorm(abs(w)))
+valor_p
+```
+
+No existe evidencia suficiente para rechazar la hipótesis nula, por lo que el valor p a una cola nos indicaría que la proporción del condado en análisis sí es menor.
+
+
+## 2. Relación entre bootstrap e inferencia bayesiana
+
+Consideremos el caso en que tenemos una única observación $x$ proveniente de una distribución normal
+
+$$x \sim N(\theta, 1)$$ 
+
+
+Supongamos ahora que elegimos una distribución inicial Normal.
+
+$$\theta \sim N(0, \tau)$$ 
+
+dando lugar a la distribución posterior (como vimos en la tarea).
+
+$$\theta|x \sim N\bigg(\frac{x}{1 + 1/\tau}, \frac{1}{1+1/\tau}\bigg)$$ 
+
+Ahora, entre mayor $\tau$, más se concentra la posterior en el estimador de
+máxima verosimilitud $\hat{\theta}=x$. En el límite, cuando $\tau \to \infty$
+obtenemos una inicial no-informativa (constante) y la distribución posterior
+
+$$\theta|x \sim N(x,1)$$
+
+Esta posterior coincide con la distribución de bootstrap paramétrico en que generamos valores $x^*$ de $N(x,1)$, donde $x$ es el estimador de máxima
+verosimilitud.
+
+Lo anterior se cumple debido a que utilizamos un ejemplo Normal pero también 
+se cumple aproximadamente en otros casos, lo que conlleva a una correspondencia
+entre el bootstrap paramétrico y la inferencia bayesiana. En este caso, la
+distribución bootstrap representa (aproximadamente) una distribución posterior 
+no-informartiva del parámetro de interés. Mediante la perturbación en los datos
+el bootstrap aproxima el efecto bayesiano de perturbar los parámetros con la
+ventaja de ser más simple de implementar (en muchos casos).  
+*Los detalles se pueden leer en _The Elements of Statistical Learning_ de 
+Hastie y Tibshirani.
+
+Comparemos los métodos en otro problema con el fin de apreciar la similitud en 
+los procedimientos: 
+
+Supongamos $x_1,...,x_n \sim N(0, \sigma^2)$, es decir, los datos provienen de 
+una distribución con media cero y varianza desconocida.
+
+En los puntos 2.1 y 2.2 buscamos hacer inferencia del parámetro $\sigma^2$.
+
+2.1 Bootstrap paramétrico.
+
+* Escribe la función de log-verosimilitud y calcula el estimador de máxima 
+verosimilitud para $\sigma^2$.  Supongamos que observamos los datos 
+`x` (en la carpeta datos), ¿Cuál es tu estimación de la varianza?
+
+La función de log verosimilitud es:
+
+$log(L(\sigma^2;x_1,...,x_n))= 150log(\frac{1}{{\sqrt {2\pi\sigma^2} }})+\frac{\sum_{1=1}^{150}{x_i^2}}{{{2\sigma^2} }}$
+
+Ver Anexo1
+
+Calculamos el estimador de máxima verosimilitud:
+
+```{r}
+X <- as.data.frame(get(load("F:/FUNDAMENTOS/x.RData")))
+summary(X)
+nrow(X)
+```
+
+
+Calculamos el logaritmo de la verosimilitud con los datos:
+
+
+```{r}
+calc_verosim <- function(x_i){
+  sumando <- -(x_i**2)
+  function(sigma_cuad){
+        150*log(1/(sqrt(sigma_cuad*2*pi)))+(1/(2*(sigma_cuad)))*sum(sumando)
+  }
+}
+verosim <- calc_verosim(X)
+```
+
+
+Maximizamos
+
+```{r}
+solucion <- optimize(verosim, c(0,200), maximum = TRUE)
+solucion
+```
+
+Con otro método (el visto en clase)
+
+```{r}
+res <- optim(10, verosim, control = list(fnscale = -1, maxit = 1000), method = "BFGS")
+res$par
+```
+
+Checamos convergencia
+
+```{r}
+res$convergence
+```
+
+Sí converge.
+
+Graficamos de manera ilustrativa para ver el máximo de la función de log verosiilitud
+
+```{r}
+dat_verosim <- tibble(sigma_cuad = seq(50, 200, 0.01)) %>% mutate(log_vero = map_dbl(sigma_cuad, verosim))
+ggplot(dat_verosim, aes(x = sigma_cuad, y = log_vero)) + geom_line() + geom_vline(xintercept = res$par, color = "red") + xlab("sigma")
+```
+
+
+Por lo tanto el estimador de máxima verosimilitud es:
+
+
+```{r}
+sigma_cuadrada <- res$par
+sigma_cuadrada
+```
+
+
+* Aproxima el error estándar de la estimación usando __bootstrap paramétrico__ y 
+realiza un histograma de las replicaciones bootstrap.
+
+
+Simulamos observaciones con base en el estimador de máxima verosimilitud, del mismo número de nuestra muestra inicial
+
+
+```{r}
+simular_modelo <- function(n, sigma){
+  rnorm(n, 0, sigma)
+}
+muestra_bootstrap <- simular_modelo(150, sigma_cuadrada^0.5)
+```
+
+
+Creamos nueva verosimilitud para muestra bootstrap, optimizamos y vemos si converge
+
+```{r}
+log_p_boot <- calc_verosim(muestra_bootstrap)
+
+# optimizamos
+res_boot <- optim(100, log_p_boot, control = list(fnscale = -1, maxit = 1000), method = "BFGS")
+res_boot$convergence
+```
+
+Sí converge, el estimador de máxima verosimilitud para esta única replicación bootstrap es:
+
+```{r}
+est_mle_boot <- res_boot$par
+est_mle_boot
+```
+
+Esto lo hacemos 5000 veces
+
+```{r}
+rep_boot <- function(rep, calc_verosim, sigma_cuadrada, n){
+  muestra_bootstrap <- simular_modelo(150, sigma_cuadrada^0.5)
+  log_p_boot <- calc_verosim(muestra_bootstrap)
+  # optimizamos
+  res_boot <- optim(10, log_p_boot, control = list(fnscale = -1, maxit = 1000), method = "BFGS")
+  try(if(res_boot$convergence != 0) stop("No se alcanzó convergencia."))
+  tibble(parametro = c("sigma_cuad"), estimador_boot = res_boot$par) 
+}
+
+set.seed(127876)
+
+reps_boot <- map_dfr(1:5000, ~ rep_boot(.x, calc_verosim, sigma_cuadrada, n = 150), rep = ".id") 
+reps_boot
+```
+
+Calculamos Error Estándar
+
+
+```{r}
+
+error_est <- sd(reps_boot$estimador_boot)
+error_est
+```
+
+Hacemos un histograma de las sigmas cuadradas bootstrap
+
+```{r}
+ggplot(reps_boot, aes(x=estimador_boot, y = ..density..))+ geom_histogram(color="darkblue", fill="lightblue")
+```
+
+
+2.2 Análisis bayesiano
+
+* Continuamos con el problema de hacer inferencia de $\sigma^2$. Comienza 
+especificando una inicial Gamma Inversa, justifica tu elección de los parámetros 
+de la distribución inicial y grafica la función de densidad.
+
+Estimaremos los parámetros mediante el método de momentos, para eso obtenemos la media y la desviación estándar de las replicaciones bootstrap:
+
+Si x es gamma inversa, entonces:
+
+$f(x)=\frac{\beta^\alpha}{\Gamma(\alpha)}x^{-\alpha-1}exp(\frac{-\beta}{x})$
+
+La media es:
+
+$E(x)=\frac{\beta}{\alpha-1}$
+
+Y la varianza es:
+
+$Var(x)=\frac{\beta^2}{(\alpha-1)^2(\alpha-2)}$
+
+Por lo que 
+
+$\beta=E(x)(\alpha-1)$
+
+y
+
+$\alpha = \frac{E(x)^2}{\sigma^2}+2$
+
+Para parametrizar en R, tomamos
+
+$\alpha=shape$
+
+$\beta=rate$
+
+Resolvemos estos parámetros
+
+```{r}
+mean(reps_boot$estimador_boot)
+error_est**2
+```
+
+
+```{r}
+shape_boot <- ((mean(reps_boot$estimador_boot)^2)/(error_est**2))+2
+rate_boot <- mean(reps_boot$estimador_boot)*(shape_boot-1)
+
+shape_boot
+rate_boot
+```
+
+Graficamos la función de densidad:
+
+
+```{r}
+library(invgamma)
+library(ggplot2); theme_set(theme_bw())
+x <- seq(50, 200, .01)
+qplot(x, dinvgamma(x, shape = 77, rate = 9928), geom = "line")
+```
+
+Observese que es similar al histograma de las replicaciones bootstrap
+
+
+
+* Calcula analíticamente la distribución posterior.
+
+Tomamos como verosimilitud
+
+
+$P(x_1,x_2,...x_150|\sigma^2)=\frac{(\sigma^2)^{-\frac{150}{2}}}{\sqrt{2\pi}^{150}}\exp(-\frac{\sum_{1=1}^{150}{x_i}}{2\sigma^2})$
+
+Por otro lado:
+
+$P(\sigma^2)=\frac{\beta^\alpha}{\Gamma(\alpha)}(\sigma^2)^{{-\alpha-1}}\exp(\frac{-\beta}{\sigma^2})$
+
+Calculamos la posterior como:
+
+$P(\sigma^2|x_1,x_2,...,x_150)\propto\frac{(\sigma^2)^{-\frac{150}{2}}}{\sqrt{2\pi}^{150}}\exp(-\frac{\sum_{1=1}^{150}{x_i}}{2\sigma^2})\frac{\beta^\alpha}{\Gamma(\alpha)}(\sigma^2)^{{-\alpha-1}}\exp(\frac{-\beta}{\sigma^2})$
+
+Eliminando los términos que no dependen de $\sigma^2$:
+
+$P(\sigma^2|x_1,x_2,...,x_150)\propto(\sigma^2)^{{-(\alpha+75)-1}}\exp(-\frac{\frac{\sum_{1=1}^{150}{x_i}}{2}}{\sigma^2})$
+
+Por lo que $sigma^2\sim GammaInversa(\alpha+75,\frac{\frac{\sum_{1=1}^{150}{x_i}}{2}}{\sigma^2})$
+
+
+La distribución posterior es gamma_inversa con shape_new, rate_new.
+
+```{r}
+suma_x_cuad <- function(x_i){
+  sumando <- sum(x_i**2)
+}
+suma_x_cuad_val <- suma_x_cuad(X)
+
+shape_new <- shape_boot+75
+rate_new <- (suma_x_cuad_val + 2*rate_boot)/2
+
+shape_new
+rate_new
+
+```
+
+
+* Realiza un histograma de simulaciones de la distribución posterior y calcula
+el error estándar de la distribución.
+
+```{r}
+simulaciones <- tibble(simul = 1:5000, sigma_cuad = rinvgamma(5000, shape_new, rate_new))
+ggplot(simulaciones, aes(x=sigma_cuad, y = ..density..))+ geom_histogram(color="darkblue", fill="lightblue")
+
+```
+
+* ¿Cómo se comparan tus resultados con los de bootstrap paramétrico?
+
+```{r}
+histo_comparativo <- tibble(est = 1:5000, bootstrap_parametrico = reps_boot$estimador_boot, distribucion_posterior = rinvgamma(5000, shape_new, rate_new))
+
+histo_comparativo_long <- histo_comparativo %>% pivot_longer(cols=c(2,3), names_to = "Metodo", values_to= "sigma_cuadrada")
+
+ggplot(histo_comparativo_long, aes(sigma_cuadrada, fill = Metodo)) + 
+   geom_histogram(alpha = 0.5, aes(y = ..density..), position = 'identity')  
+
+```
+
+Media de las replicaciones bootstrap
+
+```{r}
+mean(histo_comparativo$bootstrap_parametrico)
+```
+
+Media de la distribución posterior
+
+```{r}
+mean(histo_comparativo$distribucion_posterior)
+```
+
+Error Estándar replicaciones bootstrap
+
+```{r}
+sd(histo_comparativo$bootstrap_parametrico)
+```
+
+Error estandar distribución posterior
+
+```{r}
+sd(histo_comparativo$distribucion_posterior)
+```
+
+Se dismuniye el error estándar de la distribucuón posterior
+
+
+2.3 Supongamos que ahora buscamos hacer inferencia del parámetro 
+$\tau=log(\sigma)$, ¿cuál es el estimador de máxima verosimilitud?
+
+* Utiliza bootstrap paramétrico para generar un intervalo de confianza del 95%
+para el parámetro $\tau$ y realiza un histograma de las replicaciones 
+bootstrap.
+
+Haciendo:
+
+$\tau=log(\sigma)$
+
+o
+
+$\sigma=exp(\tau)$
+
+o bien
+
+$\sigma^2=exp(2\tau)$
+
+Y repitiendo los desarrollos anteriores:
+
+
+```{r}
+calc_verosim_tau <- function(x_i){
+  sumando <- -(x_i**2)
+  function(tau){
+        150*log(1/(sqrt(2*pi)))+((1/(2*(exp(2*tau))))*sum(sumando))-150*tau
+  }
+}
+verosim_tau <- calc_verosim_tau(X)
+```
+
+Maximizamos
+
+```{r}
+solucion_tau <- optimize(verosim_tau, c(0,20), maximum = TRUE)
+solucion_tau
+```
+
+Con otro método
+
+```{r}
+res_tau <- optim(10, verosim_tau, control = list(fnscale = -1, maxit = 1000), method = "BFGS")
+res_tau$par
+
+```
+
+Checamos convergencia
+
+```{r}
+res_tau$convergence
+```
+
+Graficamos
+
+```{r}
+dat_verosim_tau <- tibble(tau = seq(0, 20, 0.01)) %>% mutate(log_vero = map_dbl(tau, verosim_tau))
+ggplot(dat_verosim_tau, aes(x = tau, y = log_vero)) + geom_line() + geom_vline(xintercept = 2.43, color = "red") + xlab("tau")
+
+```
+
+
+Simulamos observaciones con base en el estimador de máxima verosimilitud, del mismo número de nuestra muestra inicial
+
+```{r}
+simular_modelo_tau <- function(n, tau){
+  rnorm(n, 0, tau)
+}
+muestra_bootstrap_tau <- simular_modelo(150, exp(2.43))
+```
+
+
+Creamos nueva verosimilitud para muestra bootstrap, optimizamos y vemos si converge
+
+```{r}
+log_p_boot_tau <- calc_verosim_tau(muestra_bootstrap_tau)
+# optimizamos
+res_boot_tau <- optim(10, log_p_boot_tau, control = list(fnscale = -1, maxit = 1000), method = "BFGS")
+res_boot_tau$convergence
+```
+
+Sí converge, el estimador de máxima verosimilitud para esta réplica bootstrap es:
+
+```{r}
+est_mle_boot_tau <- res_boot_tau$par
+est_mle_boot_tau
+```
+
+Esto lo hacemos 5000 veces
+
+```{r}
+rep_boot_tau <- function(rep, calc_verosim_tau, tau, n){
+  muestra_bootstrap_tau <- simular_modelo_tau(150, exp(res_tau$par))
+  log_p_boot_tau <- calc_verosim_tau(muestra_bootstrap_tau)
+  # optimizamos
+  res_boot_tau <- optim(10, log_p_boot_tau, control = list(fnscale = -1, maxit = 1000), method = "BFGS")
+  try(if(res_boot_tau$convergence != 0) stop("No se alcanzó convergencia."))
+  tibble(parametro = c("tau"), estimador_boot_tau = res_boot_tau$par) 
+}
+
+set.seed(127876)
+
+reps_boot_tau <- map_dfr(1:5000, ~ rep_boot_tau(.x, calc_verosim_tau, tau, n = 150), rep = ".id") 
+reps_boot_tau
+```
+
+```{r}
+error_est_tau <- sd(reps_boot_tau$estimador_boot_tau)
+error_est_tau
+```
+
+Hacemos un histograma de las tau bootstrap
+
+```{r}
+ggplot(reps_boot_tau, aes(x=estimador_boot_tau, y = ..density..))+ geom_histogram(color="darkblue", fill="lightblue")
+```
+
+El intervalo es:
+
+```{r}
+quantile(reps_boot_tau$estimador_boot_tau, c(.025, .925))
+```
+
+* Ahora volvamos a inferencia bayesiana, calcula  un intervalo de confianza para $\tau$ y un histograma de la distribución posterior de $\tau$.
+
+```{r}
+shape_boot_tau <- ((mean(reps_boot_tau$estimador_boot_tau)^2)/(error_est_tau**2))+2
+rate_boot_tau <- mean(reps_boot_tau$estimador_boot_tau)*(shape_boot_tau-1)
+
+shape_boot_tau
+rate_boot_tau
+
+x <- seq(2.1, 2.7, .001)
+qplot(x, dinvgamma(x, shape = shape_boot_tau, rate = rate_boot_tau), geom = "line")
+```
+
+La posterior es
+
+Tomamos la misma posterior para v=exp(2*tau), esto es tau=log(v)/2
+
+```{r}
+simulaciones_tau <- tibble(simul = 1:5000, tau = log(rinvgamma(5000, shape_new, rate_new)))/2
+ggplot(simulaciones_tau, aes(x=tau, y = ..density..))+ geom_histogram(color="darkblue", fill="lightblue")
+```
+
+Sacamos intervalo de confianza
+
+```{r}
+quantile(simulaciones_tau$tau, c(.025, .925))
+```
+
+### 3. Bayesiana y regularización
+
+Lee el ejempo *2.7 Informative prior distribution for cancer rates* del libro
+[Bayesian Data Analysis](http://www.stat.columbia.edu/~gelman/book/BDA3.pdf) (página 46).
+
+En el siguiente ejercicio harás algo similar al ejemplo anterior, en este caso 
+con el modelo Beta-Binomial.
+
+Los datos *pew_research_center_june_elect_wknd_data.dta* tienen información de 
+encuestas realizadas durante la campaña presidencial 2008 de EUA.
+
+```{r}
+poll_data <- foreign::read.dta("F:/FUNDAMENTOS/pew_research_center_june_elect_wknd_data.dta")
+```
+
+* Estima el porcentaje de la población de cada estado (excluyendo Alaska, Hawai, 
+y DC)  que se considera *very liberal*, utilizando el estimador de máxima 
+verosimilitud.
+
+```{r}
+por_estado <- poll_data %>% group_by(state) %>% summarise(n_estado = n())
+por_estado_liberal <- poll_data %>% group_by(state,ideo) %>% summarise(n_very_liberal = n()) %>% filter(ideo=="very liberal")
+por_very_liberal <- left_join(por_estado,por_estado_liberal)
+por_very_liberal$por <- por_very_liberal$n_very_liberal/por_very_liberal$n_estado
+por_very_liberal <- por_very_liberal %>% select(state,n_estado,n_very_liberal,por) %>% filter(state != "alaska" & state != "hawaii" & state!= "washington dc" )
+por_very_liberal
+```
+
+  - Grafica en el eje *x* el número de encuestas para cada estado y en el eje *y* la estimación de máxima verosimilitud. ¿Qué observas?  
+
+```{r}
+
+
+```
+
+
+  
+  - Grafica en el eje *x* el porcentaje de votos que obtuvo Obama en la elección
+  para cada estado y en el eje *y* la estimación de máxima verosimilitud. ¿Qué observas? (usa los datos *2008ElectionResult.csv*)
+
+* Estima el mismo porcentaje usando inferencia bayesiana, en particular
+la familia conjugada binomial-beta. Deberás estimar la proporción de manera 
+independiente para cada estado, sin embargo, utilizarás la misma inicial a lo
+largo de todos.
+  - Para elegir los parámetros $\alpha$, $\beta$ de la incial considera la media
+  y varianza de la distribución predictiva posterior (que en este caso tiene
+  ditsribución [Beta-Binomial](https://en.wikipedia.org/wiki/Beta-binomial_distribution))
+  y empata la media y varianza observadas a sus valores observados para después
+  depejar $\alpha$ y $\beta$ (puedes usar [Wolfram alpha](https://www.wolframalpha.com/) para resolver).  
+  - Utiliza la media posterior de cada estado como estimador puntual y repite las
+  gráficas del inciso anterior.
+
+**Nota:** Este proceso para obtener los parámetros de la incial es razonable para
+este ejercicio, sin embargo, un modelo jerárquico sería la manera de formalizar 
+este acercamiento y se estudiará en próximas materias.
+
+
